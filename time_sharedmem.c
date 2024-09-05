@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
 
     // Create the shared memory
     int shm_fd;
-    struct timeval *ptr;
+    struct timeval *start;
     shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1) {
         perror("shm_open");
@@ -34,18 +34,17 @@ int main(int argc, char *argv[]) {
     // Configure the size of the shared memory
     if (ftruncate(shm_fd, SIZE) == -1) {
         perror("ftruncate");
+        shm_unlink(name);
         return 1;
     }
 
     // Map the shared memory
-    ptr = (struct timeval *)mmap(0, SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (ptr == MAP_FAILED) {
+    start = (struct timeval *)mmap(0, SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (start == MAP_FAILED) {
         perror("mmap");
+        shm_unlink(name);
         return 1;
     }
-
-    // Get the current time, and store it in the shared memory
-    gettimeofday(ptr, NULL);
 
     // Fork a child process
     pid = fork();
@@ -54,16 +53,36 @@ int main(int argc, char *argv[]) {
         perror("fork");
         return 1;
     } else if (pid == 0) { // Child Process
+        // Get the current time, and store it in the shared memory
+        gettimeofday(start, NULL);
         execvp(argv[1], &argv[1]);
         perror("execvp");
+        _exit(1);
     } else { // Parent Process
         wait(NULL);
         struct timeval end;
         gettimeofday(&end, NULL);
-        printf("Elapsed time: %f seconds\n", (end.tv_sec - ptr->tv_sec) + ((end.tv_usec - ptr->tv_usec) / 1000000.0));
+        double elapsed = (end.tv_sec - start->tv_sec) + ((end.tv_usec - start->tv_usec) / 1000000.0);
+        printf("Elapsed time: %f seconds\n", elapsed);
     }
     
     // Unmap the shared memory
+    munmap(start, SIZE);
+    close(shm_fd);
     shm_unlink(name);
+
     return 0;
 }
+
+/*
+     __         _                 
+  /\ \ \  ___  | |_   ___  ___  _ 
+ /  \/ / / _ \ | __| / _ \/ __|(_)
+/ /\  / | (_) || |_ |  __/\__ \ _ 
+\_\ \/   \___/  \__| \___||___/(_)                             
+- This program times how long a command takes to run using shared memory
+- Example Code adapted from ZyBooks Sections 3.3 and 3.7
+- In accordance with the Responsible AI Use Policy, assistance from ChatGPT 
+  and GitHub Copilot Chat was used to understand how to approach the problem 
+  and fix bugs. However, AI was not used to write the code.
+*/
